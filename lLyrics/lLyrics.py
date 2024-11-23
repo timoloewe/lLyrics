@@ -809,9 +809,12 @@ class lLyrics(GObject.Object, Peas.Activatable):
         return ""
 
     def get_lyrics_from_tags(self, filepath):
+        lyrics = ""
+        if filepath == "":
+            return lyrics
+        
         tags_dict = TinyTag.get(filepath).as_dict()
         possible_keys = ['lyrics', 'unsynched lyrics']
-        lyrics = ""
         for k in possible_keys:
             if k in tags_dict.keys():
                 lyrics_list = tags_dict[k]
