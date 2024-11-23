@@ -14,7 +14,7 @@ It is intended as a replacement of the built-in lyrics plugin of Rhythmbox with 
 
 Lyrics sources
 ---------------
-
+  - Tags
   - Lyricwiki.org
   - Letras.terra.com.br
   - Vagalume.com.br
@@ -103,6 +103,7 @@ Thanks to all who contribute, report issues or help in any other way to make thi
 You will always find the latest version on [GitHub](https://github.com/dmo60/lLyrics).
 Please report bugs, issues or feature requests there.
 
+Used TynyTag library, latest version on [GithHub](https://github.com/tinytag/tinytag)
 Help with translations is always appreciated!
 
 All lyrics are property and copyright of their owners.
