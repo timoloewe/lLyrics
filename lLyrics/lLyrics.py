@@ -28,6 +28,7 @@ from gi.repository import Gtk
 from gi.repository import Pango
 from gi.repository import GdkPixbuf
 from gi.repository import GLib
+from gi.repository import Gio
 
 import ChartlyricsParser
 import LyricwikiParser
@@ -47,6 +48,7 @@ from Config import Config
 from Config import ConfigDialog
 
 import gettext
+from tinytag import TinyTag
 
 gettext.install('lLyrics', os.path.dirname(__file__) + "/locale/")
 
@@ -191,6 +193,7 @@ class lLyrics(GObject.Object, Peas.Activatable):
         self.first = None
         self.current_source = None
         self.artist = None
+        self.filepath = None
         self.title = None
         self.clean_artist = None
         self.clean_title = None
@@ -472,17 +475,18 @@ class lLyrics(GObject.Object, Peas.Activatable):
         # get the song data
         self.artist = entry.get_string(RB.RhythmDBPropType.ARTIST)
         self.title = entry.get_string(RB.RhythmDBPropType.TITLE)
+        self.filepath = entry.get_string(RB.RhythmDBPropType.LOCATION)
 
-        print("search lyrics for " + self.artist + " - " + self.title)
+        print("search lyrics for " + self.artist + " - " + self.title + ": " + self.filepath)
 
         self.was_corrected = False
 
-        (self.clean_artist, self.clean_title) = self.clean_song_data(self.artist, self.title)
+        (self.clean_artist, self.clean_title, self.filepath) = self.clean_song_data(self.artist, self.title, self.filepath)
         self.path = self.build_cache_path(self.clean_artist, self.clean_title)
 
-        self.scan_all_sources(self.clean_artist, self.clean_title, True)
+        self.scan_all_sources(self.clean_artist, self.clean_title, self.filepath, True)
 
-    def clean_song_data(self, artist, title):
+    def clean_song_data(self, artist, title, filepath):
         # convert to lowercase
         artist = artist.lower()
         title = title.lower()
@@ -509,8 +513,13 @@ class lLyrics(GObject.Object, Peas.Activatable):
         # compress spaces
         title = title.strip()
         artist = artist.strip()
+        
+        if filepath is not "" or filepath is not None:
+            filepath = Gio.File.new_for_uri(filepath).get_path()
+        else:
+            filepath = ""
 
-        return (artist, title)
+        return (artist, title, filepath)
 
     def build_cache_path(self, artist, title):
         artist_folder = os.path.join(self.lyrics_folder, artist[:128])
@@ -544,7 +553,7 @@ class lLyrics(GObject.Object, Peas.Activatable):
         self.scan_source(source, self.clean_artist, self.clean_title)
 
     def scan_all_action_callback(self, action):
-        self.scan_all_sources(self.clean_artist, self.clean_title, False)
+        self.scan_all_sources(self.clean_artist, self.clean_title, self.filepath, False)
 
     def search_online_action_callback(self, action):
         webbrowser.open("http://www.google.com/search?q=%s+%s+lyrics" % (self.clean_artist, self.clean_title))
@@ -730,18 +739,21 @@ class lLyrics(GObject.Object, Peas.Activatable):
 
         Gdk.threads_add_idle(GLib.PRIORITY_DEFAULT_IDLE, self.show_lyrics, lyrics)
 
-    def scan_all_sources(self, artist, title, cache):
+    def scan_all_sources(self, artist, title, filepath, cache):
         if self.edit_event.is_set():
             Gdk.threads_add_idle(GLib.PRIORITY_DEFAULT_IDLE, self.set_displayed_text, _("searching lyrics..."))
 
-        newthread = Thread(target=self._scan_all_sources_thread, args=(artist, title, cache))
+        newthread = Thread(target=self._scan_all_sources_thread, args=(artist, title, filepath, cache))
         newthread.start()
 
-    def _scan_all_sources_thread(self, artist, title, cache):
+    def _scan_all_sources_thread(self, artist, title, filepath, cache):
         Gdk.threads_add_idle(GLib.PRIORITY_DEFAULT_IDLE, self.set_menu_sensitive, False)
 
         lyrics = ""
-        if cache:
+        if lyrics == "":
+            lyrics = self.get_lyrics_from_tags(filepath)
+
+        if cache and lyrics == "":
             lyrics = self.get_lyrics_from_cache(self.path)
 
         if lyrics == "":
@@ -768,8 +780,8 @@ class lLyrics(GObject.Object, Peas.Activatable):
                 self.was_corrected = True
                 (artist, title, corrected) = Util.get_lastfm_correction(artist, title)
                 if corrected:
-                    (self.clean_artist, self.clean_title) = self.clean_song_data(artist, title)
-                    self._scan_all_sources_thread(self.clean_artist, self.clean_title, False)
+                    (self.clean_artist, self.clean_title, self.clean_filepath) = self.clean_song_data(artist, title, filepath)
+                    self._scan_all_sources_thread(self.clean_artist, self.clean_title, self.clean_filepath, False)
                     return
 
             self.current_source = None
@@ -795,6 +807,18 @@ class lLyrics(GObject.Object, Peas.Activatable):
             return lyrics
 
         return ""
+
+    def get_lyrics_from_tags(self, filepath):
+        tags_dict = TinyTag.get(filepath).as_dict()
+        possible_keys = ['lyrics', 'unsynched lyrics']
+        lyrics = ""
+        for k in possible_keys:
+            if k in tags_dict.keys():
+                lyrics_list = tags_dict[k]
+                lyrics = "\n".join(lyrics_list).strip()
+                break
+
+        return lyrics
 
     def write_lyrics_to_cache(self, path, lyrics):
         try:
